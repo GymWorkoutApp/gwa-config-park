@@ -1,0 +1,83 @@
+version: '3'
+
+volumes:
+     pgdata:
+
+networks:
+  sb_net:
+    driver: bridge
+
+services:
+  redis:
+    container_name: redis
+    image: redis:alpine
+    ports:
+      - 6381:6379
+
+  postgres:
+    container_name: postgres
+    image: postgres:alpine
+    ports:
+    - 5434:5432
+    volumes:
+    - pgdata:/var/lib/postgresql/data
+
+  zookeeper:
+    image: 'bitnami/zookeeper:latest'
+    networks:
+    - sb_net
+    ports:
+    - '2181:2181'
+    environment:
+    - ALLOW_ANONYMOUS_LOGIN=yes
+
+  kafka:
+    image: 'bitnami/kafka:latest'
+    hostname: kafka
+    depends_on:
+    - zookeeper
+    networks:
+    - sb_net
+    ports:
+    - '9092:9092'
+    links:
+    - zookeeper:zookeeper
+    environment:
+    - KAFKA_BROKER_ID=1
+    - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+    - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
+    - ALLOW_PLAINTEXT_LISTENER=yes
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:6.5.1
+    environment:
+    - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+    - 9200:9200
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:6.5.1
+    ports:
+    - 5601:5601
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5601"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+    - elasticsearch
+
+  apm-server:
+    image: docker.elastic.co/apm/apm-server:6.5.1
+    ports:
+    - 8200:8200
+    environment:
+      ELASTICSEARCH_URL: "http://kroton-elasticsearch:9200"
+    depends_on:
+    - elasticsearch
+    - kibana
